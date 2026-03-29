@@ -284,7 +284,7 @@ class DownloadMonitor:
             return total_bytes / self.interval
         return total_bytes / span
 
-    def render(self) -> str:
+    def render_panel(self, label: str) -> list[str]:
         now = time.time()
         elapsed = now - self.start_time
         current_files = len(self.prev_snapshot)
@@ -295,75 +295,90 @@ class DownloadMonitor:
 
         lines: list[str] = []
 
-        lines.append(f"{BOLD}{CYAN} dlmon{RESET}  {DIM}{self.directory}{RESET}")
-        lines.append(f"{DIM}{'=' * 60}{RESET}")
+        lines.append(f"  {BOLD}{CYAN}{label}{RESET}  {DIM}{self.directory.name}{RESET}")
+
+        files_str = f"{current_files}/{self.expected}" if self.expected else str(current_files)
+        lines.append(
+            f"  {WHITE}Files:{RESET} {BOLD}{files_str}{RESET}"
+            + (f" {DIM}(+{new_files}){RESET}" if new_files > 0 else "")
+        )
+
+        size_str = fmt_size(current_size)
+        if self.expected and current_files > 0:
+            est_total = int(current_size * self.expected / current_files)
+            size_str += f"  {DIM}(~{fmt_size(est_total)} est.){RESET}"
+        lines.append(
+            f"  {WHITE}Size:{RESET}  {BOLD}{size_str}{RESET}"
+            + (f" {DIM}(+{fmt_size(new_bytes)}){RESET}" if new_bytes > 0 else "")
+        )
 
         lines.append(
-            f"  {WHITE}Files:{RESET}  {BOLD}{current_files}{RESET}"
-            + (f"  {DIM}(+{new_files} this session){RESET}" if new_files > 0 else "")
+            f"  {WHITE}Speed:{RESET} {BOLD}{fmt_speed(speed)}{RESET}"
+            + f"  {WHITE}Time:{RESET} {fmt_duration(elapsed)}"
         )
-        lines.append(
-            f"  {WHITE}Size:{RESET}   {BOLD}{fmt_size(current_size)}{RESET}"
-            + (f"  {DIM}(+{fmt_size(new_bytes)}){RESET}" if new_bytes > 0 else "")
-        )
-        lines.append(f"  {WHITE}Speed:{RESET}  {BOLD}{fmt_speed(speed)}{RESET}")
-        lines.append(f"  {WHITE}Time:{RESET}   {fmt_duration(elapsed)}")
 
         if self.expected and self.expected > 0:
             frac = min(current_files / self.expected, 1.0)
-            lines.append(f"  {WHITE}Goal:{RESET}   {bar(frac)}  {current_files}/{self.expected}")
-
+            eta_str = ""
             if new_files > 0 and self.files_completed_this_session > 0:
                 rate = self.files_completed_this_session / elapsed if elapsed > 0 else 0
                 remaining = self.expected - current_files
                 if rate > 0 and remaining > 0:
-                    eta = remaining / rate
-                    lines.append(f"  {WHITE}ETA:{RESET}    ~{fmt_duration(eta)}")
-
-        lines.append(f"{DIM}{'=' * 60}{RESET}")
+                    eta_str = f"  ETA ~{fmt_duration(remaining / rate)}"
+            lines.append(f"  {bar(frac)}{eta_str}")
 
         if self.active:
-            lines.append(f"  {YELLOW}ACTIVE ({len(self.active)}){RESET}")
             sorted_active = sorted(self.active.values(), key=lambda a: a.name)
-            for dl in sorted_active[:10]:
-                name_display = dl.name if len(dl.name) <= 45 else "..." + dl.name[-42:]
+            for dl in sorted_active[:5]:
+                name_display = dl.name if len(dl.name) <= 40 else "..." + dl.name[-37:]
                 lines.append(
                     f"    {YELLOW}>{RESET} {name_display}"
                     f"  {DIM}{fmt_size(dl.size)}  {fmt_speed(dl.speed)}{RESET}"
                 )
-            if len(sorted_active) > 10:
-                lines.append(f"    {DIM}  ...and {len(sorted_active) - 10} more{RESET}")
-        else:
-            lines.append(f"  {DIM}No active downloads{RESET}")
+            if len(sorted_active) > 5:
+                lines.append(f"    {DIM}  ...and {len(sorted_active) - 5} more{RESET}")
 
         if self.recent_completed:
-            lines.append(f"\n  {GREEN}COMPLETED (recent){RESET}")
-            for comp in reversed(list(self.recent_completed)):
+            for comp in list(self.recent_completed)[-4:]:
                 age = now - comp.completed_at
-                name_display = comp.name if len(comp.name) <= 45 else "..." + comp.name[-42:]
+                name_display = comp.name if len(comp.name) <= 40 else "..." + comp.name[-37:]
                 lines.append(
                     f"    {GREEN}+{RESET} {name_display}"
                     f"  {DIM}{fmt_size(comp.size)}  {fmt_duration(age)} ago{RESET}"
                 )
 
-        lines.append(f"\n{DIM}  Ctrl+C to stop  |  Polling every {self.interval}s{RESET}")
+        if not self.active and not self.recent_completed:
+            lines.append(f"  {DIM}No active downloads{RESET}")
 
-        return ("\n" + CLEAR_LINE).join(lines) + CLEAR_LINE
+        return lines
 
-    def run(self):
-        print(HIDE_CURSOR, end="", flush=True)
-        print("\033[2J", end="", flush=True)
-        try:
-            while True:
-                self.update()
-                output = self.render()
-                print(CURSOR_HOME + output + CLEAR_TO_END, end="", flush=True)
-                time.sleep(self.interval)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            print(SHOW_CURSOR, end="", flush=True)
-            print(f"\n{GREEN}Monitor stopped.{RESET}")
+
+def run_monitors(monitors: list[tuple[str, "DownloadMonitor"]], interval: float):
+    print(HIDE_CURSOR, end="", flush=True)
+    print("\033[2J", end="", flush=True)
+    try:
+        while True:
+            lines: list[str] = []
+            lines.append(f"{BOLD}{CYAN} dlmon{RESET}")
+            lines.append(f"{DIM}{'=' * 60}{RESET}")
+
+            for i, (label, mon) in enumerate(monitors):
+                mon.update()
+                lines.extend(mon.render_panel(label))
+                if i < len(monitors) - 1:
+                    lines.append(f"{DIM}{'-' * 60}{RESET}")
+
+            lines.append(f"{DIM}{'=' * 60}{RESET}")
+            lines.append(f"{DIM}  Ctrl+C to stop  |  Polling every {interval}s{RESET}")
+
+            output = ("\n" + CLEAR_LINE).join(lines) + CLEAR_LINE
+            print(CURSOR_HOME + output + CLEAR_TO_END, end="", flush=True)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print(SHOW_CURSOR, end="", flush=True)
+        print(f"\n{GREEN}Monitor stopped.{RESET}")
 
 
 # ── CLI ──────────────────────────────────────────────────────────
@@ -400,6 +415,10 @@ examples:
     parser.add_argument(
         "--interval", "-i", type=float, default=1.0,
         help="Poll interval in seconds (default: 1.0)",
+    )
+    parser.add_argument(
+        "--also", "-a", nargs="+", default=None,
+        help="Additional directories to watch (each gets its own panel)",
     )
     args = parser.parse_args()
 
@@ -459,28 +478,47 @@ examples:
         except Exception as e:
             print(f"{YELLOW}Warning: couldn't fetch remote count: {e}{RESET}")
 
-    # ── Start ──
-    monitor = DownloadMonitor(
+    # ── Build monitors ──
+    monitors: list[tuple[str, DownloadMonitor]] = []
+
+    main_mon = DownloadMonitor(
         directory=str(directory),
         extensions=exts,
         expected=expected,
         interval=args.interval,
     )
+    file_count = len(main_mon.scan())
+    label = "WATCH" if len(monitors) == 0 else directory.name.upper()[:12]
+    print(f"{CYAN}{label}:{RESET} {directory}  ({file_count} files)")
+    main_mon.prev_snapshot = main_mon.scan()
+    main_mon.first_scan = False
+    main_mon.initial_file_count = len(main_mon.prev_snapshot)
+    main_mon.initial_total_size = sum(f.size for f in main_mon.prev_snapshot.values())
+    monitors.append((label, main_mon))
 
-    file_count = len(monitor.scan())
-    print(f"{CYAN}Monitoring:{RESET} {directory}")
-    print(f"{CYAN}Files:{RESET} {file_count}" + (f"  {CYAN}Ext:{RESET} {', '.join(exts)}" if exts else ""))
-    if expected:
-        print(f"{CYAN}Expected:{RESET} {expected}")
+    if args.also:
+        for extra_path in args.also:
+            extra_dir = Path(extra_path)
+            if not extra_dir.is_dir():
+                print(f"{YELLOW}Warning: '{extra_dir}' not found, skipping{RESET}")
+                continue
+            extra_mon = DownloadMonitor(
+                directory=str(extra_dir),
+                interval=args.interval,
+            )
+            extra_count = len(extra_mon.scan())
+            extra_label = extra_dir.name.upper()[:12]
+            print(f"{CYAN}{extra_label}:{RESET} {extra_dir}  ({extra_count} files)")
+            extra_mon.prev_snapshot = extra_mon.scan()
+            extra_mon.first_scan = False
+            extra_mon.initial_file_count = len(extra_mon.prev_snapshot)
+            extra_mon.initial_total_size = sum(f.size for f in extra_mon.prev_snapshot.values())
+            monitors.append((extra_label, extra_mon))
+
     print(f"\nStarting in 1s...")
     time.sleep(1)
 
-    monitor.prev_snapshot = monitor.scan()
-    monitor.first_scan = False
-    monitor.initial_file_count = len(monitor.prev_snapshot)
-    monitor.initial_total_size = sum(f.size for f in monitor.prev_snapshot.values())
-
-    monitor.run()
+    run_monitors(monitors, args.interval)
 
 
 if __name__ == "__main__":
