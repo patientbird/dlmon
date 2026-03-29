@@ -32,6 +32,7 @@ YELLOW = "\033[33m"
 RED = "\033[31m"
 WHITE = "\033[97m"
 CURSOR_HOME = "\033[H"
+CLEAR_LINE = "\033[K"
 CLEAR_TO_END = "\033[J"
 HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
@@ -347,7 +348,7 @@ class DownloadMonitor:
 
         lines.append(f"\n{DIM}  Ctrl+C to stop  |  Polling every {self.interval}s{RESET}")
 
-        return "\n".join(lines)
+        return ("\n" + CLEAR_LINE).join(lines) + CLEAR_LINE
 
     def run(self):
         print(HIDE_CURSOR, end="", flush=True)
