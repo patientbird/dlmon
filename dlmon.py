@@ -436,10 +436,25 @@ examples:
 
     # ── Resolve expected count ──
     expected = args.expected
-    if expected is None and args.url:
+    url = args.url
+
+    # Check for .dlmon sidecar file (any download script can write one)
+    sidecar = directory / ".dlmon"
+    if sidecar.is_file() and expected is None and url is None:
+        for line in sidecar.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("url=") and url is None:
+                url = line[4:].strip()
+            elif line.startswith("expected=") and expected is None:
+                try:
+                    expected = int(line[9:].strip())
+                except ValueError:
+                    pass
+
+    if expected is None and url:
         print(f"{CYAN}Fetching remote file count...{RESET}")
         try:
-            expected = count_remote_files(args.url, exts)
+            expected = count_remote_files(url, exts)
             print(f"{CYAN}Remote files:{RESET} {expected}")
         except Exception as e:
             print(f"{YELLOW}Warning: couldn't fetch remote count: {e}{RESET}")

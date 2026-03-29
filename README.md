@@ -95,6 +95,28 @@ Every poll cycle (default: 1 second), dlmon snapshots all files in the target di
 
 This is tool-agnostic. It doesn't hook into curl or any specific downloader — it just watches the filesystem.
 
+## Sidecar File (`.dlmon`)
+
+Drop a `.dlmon` file in the download directory to automatically enable the progress bar — no flags needed.
+
+```
+url=https://example.com/files/
+expected=500
+```
+
+| Key | Purpose |
+|-----|---------|
+| `url` | HTTP directory listing — dlmon counts the linked files |
+| `expected` | Total file count (takes priority over `url`) |
+
+Either key is optional. Your download script can write this file before starting, and dlmon will pick it up automatically.
+
+```python
+# Example: write .dlmon from a download script
+with open(os.path.join(dest_dir, ".dlmon"), "w") as f:
+    f.write(f"url={source_url}\n")
+```
+
 ## Flags
 
 | Flag | Short | Default | Description |
