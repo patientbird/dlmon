@@ -31,7 +31,8 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 RED = "\033[31m"
 WHITE = "\033[97m"
-CLEAR_SCREEN = "\033[2J\033[H"
+CURSOR_HOME = "\033[H"
+CLEAR_TO_END = "\033[J"
 HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
 
@@ -350,11 +351,12 @@ class DownloadMonitor:
 
     def run(self):
         print(HIDE_CURSOR, end="", flush=True)
+        print("\033[2J", end="", flush=True)
         try:
             while True:
                 self.update()
                 output = self.render()
-                print(CLEAR_SCREEN + output, end="", flush=True)
+                print(CURSOR_HOME + output + CLEAR_TO_END, end="", flush=True)
                 time.sleep(self.interval)
         except KeyboardInterrupt:
             pass
